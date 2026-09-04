@@ -44,6 +44,13 @@ builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 
+// Document storage and content-safety seam
+builder.Services.Configure<ContosoDashboard.Models.DocumentStorageOptions>(
+    builder.Configuration.GetSection(ContosoDashboard.Models.DocumentStorageOptions.SectionName));
+builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.AddScoped<IFileScanner, PermissiveFileScanner>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
+
 // Add HttpContextAccessor for accessing user claims
 builder.Services.AddHttpContextAccessor();
 

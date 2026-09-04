@@ -17,6 +17,44 @@
     top: 0.5rem;
 }
 
+/* Blazor Server renders over a SignalR connection. If that connection drops, the page keeps
+   showing its last render but nothing responds. Blazor toggles this element's class to signal
+   the connection state, so without it a dropped circuit looks like a frozen app. */
+#components-reconnect-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1050;
+    align-items: center;
+    justify-content: center;
+}
+
+#components-reconnect-modal.components-reconnect-show,
+#components-reconnect-modal.components-reconnect-failed,
+#components-reconnect-modal.components-reconnect-rejected {
+    display: flex;
+}
+
+#components-reconnect-modal .reconnect-box {
+    background: #fff;
+    border-radius: 0.5rem;
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.3);
+    max-width: 26rem;
+}
+
+#components-reconnect-modal .reconnect-status {
+    display: none;
+    margin: 0;
+}
+
+#components-reconnect-modal.components-reconnect-show .show-when-reconnecting,
+#components-reconnect-modal.components-reconnect-failed .show-when-reconnect-failed,
+#components-reconnect-modal.components-reconnect-rejected .show-when-reconnect-rejected {
+    display: block;
+}
+
 .page {
     position: relative;
     display: flex;

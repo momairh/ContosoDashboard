@@ -17,6 +17,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notification> Notifications { get; set; } = null!;
     public DbSet<ProjectMember> ProjectMembers { get; set; } = null!;
     public DbSet<Announcement> Announcements { get; set; } = null!;
+    public DbSet<Document> Documents { get; set; } = null!;
+    public DbSet<DocumentShare> DocumentShares { get; set; } = null!;
+    public DbSet<DocumentActivity> DocumentActivities { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -64,8 +67,79 @@ public class ApplicationDbContext : DbContext
             .HasIndex(u => u.Email)
             .IsUnique();
 
+        ConfigureDocuments(modelBuilder);
+
         // Seed initial data
         SeedData(modelBuilder);
+    }
+
+    private void ConfigureDocuments(ModelBuilder modelBuilder)
+    {
+        // Documents survive the deletion of a project or task, reverting to personal scope.
+        modelBuilder.Entity<Document>()
+            .HasOne(d => d.UploadedBy)
+            .WithMany(u => u.Documents)
+            .HasForeignKey(d => d.UploadedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Document>()
+            .HasOne(d => d.Project)
+            .WithMany(p => p.Documents)
+            .HasForeignKey(d => d.ProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Document>()
+            .HasOne(d => d.Task)
+            .WithMany(t => t.Documents)
+            .HasForeignKey(d => d.TaskId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<DocumentShare>()
+            .HasOne(s => s.Document)
+            .WithMany(d => d.Shares)
+            .HasForeignKey(s => s.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<DocumentShare>()
+            .HasOne(s => s.SharedWithUser)
+            .WithMany()
+            .HasForeignKey(s => s.SharedWithUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<DocumentShare>()
+            .HasOne(s => s.SharedBy)
+            .WithMany()
+            .HasForeignKey(s => s.SharedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // DocumentActivity deliberately has NO enforced foreign key to Document: a cascade
+        // would destroy the audit trail along with the document (research R-012).
+        modelBuilder.Entity<DocumentActivity>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // DocumentId is stored as a plain column with no relationship, so activity history
+        // survives permanent deletion of the document (research R-012).
+        modelBuilder.Entity<DocumentActivity>()
+            .Property(a => a.DocumentId);
+
+        // Indexes supporting the listing, filtering, and sorting targets (SC-002, SC-004)
+        modelBuilder.Entity<Document>().HasIndex(d => d.UploadedByUserId);
+        modelBuilder.Entity<Document>().HasIndex(d => d.ProjectId);
+        modelBuilder.Entity<Document>().HasIndex(d => d.TaskId);
+        modelBuilder.Entity<Document>().HasIndex(d => d.Category);
+        modelBuilder.Entity<Document>().HasIndex(d => d.UploadedAt);
+        modelBuilder.Entity<Document>().HasIndex(d => new { d.UploadedByUserId, d.UploadedAt });
+
+        modelBuilder.Entity<DocumentShare>().HasIndex(s => s.DocumentId);
+        modelBuilder.Entity<DocumentShare>().HasIndex(s => s.SharedWithUserId);
+        modelBuilder.Entity<DocumentShare>().HasIndex(s => s.SharedWithDepartment);
+
+        modelBuilder.Entity<DocumentActivity>().HasIndex(a => a.DocumentId);
+        modelBuilder.Entity<DocumentActivity>().HasIndex(a => a.UserId);
+        modelBuilder.Entity<DocumentActivity>().HasIndex(a => a.OccurredAt);
     }
 
     private void SeedData(ModelBuilder modelBuilder)

@@ -62,6 +62,12 @@ namespace ContosoDashboard.Pages
                     new Claim(ClaimTypes.Role, user.Role.ToString())
                 };
 
+                // Department is the unit of team-based document sharing (FR-031a).
+                if (!string.IsNullOrWhiteSpace(user.Department))
+                {
+                    claims.Add(new Claim("Department", user.Department));
+                }
+
                 var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
                 var authProperties = new AuthenticationProperties
                 {

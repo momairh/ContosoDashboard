@@ -354,3 +354,7 @@ MigrationBackup/
 ContosoDashboard.db
 ContosoDashboard.db-shm
 ContosoDashboard.db-wal
+
+# Uploaded document content (T002)
+ContosoDashboard/AppData/uploads/*
+!ContosoDashboard/AppData/uploads/.gitkeep

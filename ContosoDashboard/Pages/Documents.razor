@@ -1,0 +1,148 @@
+@page "/documents"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Documents - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>Documents</h1>
+            <p class="text-muted">Files you uploaded, plus documents shared with you.</p>
+        </div>
+    </div>
+
+    @if (currentUserId > 0)
+    {
+        <DocumentUploadDialog CurrentUserId="currentUserId" OnUploaded="LoadDocuments" />
+    }
+
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label class="form-label" for="filterCategory">Category</label>
+            <select id="filterCategory" class="form-select" @bind="filterCategory"
+                    @bind:after="LoadDocuments">
+                <option value="">All categories</option>
+                @foreach (var option in DocumentCategory.All)
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="filterSort">Sort by</label>
+            <select id="filterSort" class="form-select" @bind="sortOrder"
+                    @bind:after="LoadDocuments">
+                <option value="@DocumentSortOrder.NewestFirst">Newest first</option>
+                <option value="@DocumentSortOrder.OldestFirst">Oldest first</option>
+                <option value="@DocumentSortOrder.TitleAscending">Title (A-Z)</option>
+            </select>
+        </div>
+    </div>
+
+    @if (documents is null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (documents.Count == 0)
+    {
+        <div class="text-center py-5 border rounded bg-light">
+            <i class="bi bi-folder2-open fs-1 text-muted"></i>
+            <h5 class="mt-3">No documents yet</h5>
+            <p class="text-muted mb-0">
+                Upload a file above to get started. Documents shared with you appear here too.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Category</th>
+                        <th>Size</th>
+                        <th>Uploaded by</th>
+                        <th>Uploaded</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var document in documents)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@document.Title</div>
+                                <div class="small text-muted">@document.OriginalFileName</div>
+                            </td>
+                            <td><span class="badge bg-secondary">@document.Category</span></td>
+                            <td>@FormatSize(document.FileSizeBytes)</td>
+                            <td>@(document.UploadedBy?.DisplayName ?? "Unknown")</td>
+                            <td>@document.UploadedAt.ToLocalTime().ToString("g")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Document>? documents;
+    private int currentUserId;
+    private string filterCategory = "";
+    private DocumentSortOrder sortOrder = DocumentSortOrder.NewestFirst;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier);
+
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+        {
+            currentUserId = userId;
+        }
+
+        if (currentUserId > 0)
+        {
+            await LoadDocuments();
+        }
+        else
+        {
+            documents = new List<Document>();
+        }
+    }
+
+    private async Task LoadDocuments()
+    {
+        if (currentUserId <= 0)
+        {
+            documents = new List<Document>();
+            return;
+        }
+
+        var filter = new DocumentFilter
+        {
+            Category = string.IsNullOrEmpty(filterCategory) ? null : filterCategory,
+            SortOrder = sortOrder
+        };
+
+        documents = await DocumentService.GetDocumentsAsync(currentUserId, filter);
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.#} KB";
+        return $"{bytes / 1024d / 1024d:0.#} MB";
+    }
+}

@@ -1,0 +1,219 @@
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Components.Forms
+@inject IDocumentService DocumentService
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> Upload a Document</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger" role="alert">@errorMessage</div>
+        }
+
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <div class="alert alert-success" role="alert">@successMessage</div>
+        }
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="documentFile">File</label>
+                <InputFile id="documentFile"
+                           class="form-control"
+                           @key="inputFileKey"
+                           OnChange="HandleFileSelected"
+                           accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png" />
+                <div class="form-text">Up to 25 MB. Office, PDF, text, CSV, and image files.</div>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="documentTitle">Title</label>
+                <input id="documentTitle" class="form-control" @bind="title"
+                       placeholder="Defaults to the file name" />
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="documentCategory">Category</label>
+                <select id="documentCategory" class="form-select" @bind="category">
+                    @foreach (var option in DocumentCategory.All)
+                    {
+                        <option value="@option">@option</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="documentTags">Tags</label>
+                <input id="documentTags" class="form-control" @bind="tags"
+                       placeholder="Comma separated" />
+            </div>
+
+            <div class="col-12">
+                <label class="form-label" for="documentDescription">Description</label>
+                <textarea id="documentDescription" class="form-control" rows="2"
+                          @bind="description"></textarea>
+            </div>
+
+            <div class="col-12">
+                <button class="btn btn-primary" @onclick="UploadAsync"
+                        disabled="@(isUploading || selectedFileName is null)">
+                    @if (isUploading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        <span>Uploading...</span>
+                    }
+                    else
+                    {
+                        <span><i class="bi bi-upload"></i> Upload</span>
+                    }
+                </button>
+
+                @if (selectedFileName is not null)
+                {
+                    <span class="ms-2 text-muted">
+                        @selectedFileName (@FormatSize(selectedFileSize))
+                    </span>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnUploaded { get; set; }
+    [Parameter] public int CurrentUserId { get; set; }
+
+    // Rotating the key forces a fresh InputFile after each upload, preventing stale-reference
+    // and "same file cannot be re-selected" failures (research R-006).
+    private Guid inputFileKey = Guid.NewGuid();
+
+    private string? title;
+    private string? description;
+    private string category = DocumentCategory.Other;
+    private string? tags;
+
+    private string? selectedFileName;
+    private string? selectedContentType;
+    private long selectedFileSize;
+    private MemoryStream? buffer;
+
+    private bool isUploading;
+    private string? errorMessage;
+    private string? successMessage;
+
+    private const long MaxUploadBytes = 26_214_400;
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        errorMessage = null;
+        successMessage = null;
+
+        var file = e.File;
+
+        // Capture metadata into locals before opening the stream: IBrowserFile is disposed when
+        // the component re-renders, so reading these later throws (research R-006).
+        selectedFileName = file.Name;
+        selectedContentType = file.ContentType;
+        selectedFileSize = file.Size;
+
+        if (selectedFileSize > MaxUploadBytes)
+        {
+            errorMessage = "The file exceeds the 25 MB limit.";
+            ClearSelection();
+            return;
+        }
+
+        try
+        {
+            buffer?.Dispose();
+            buffer = new MemoryStream();
+
+            await using var readStream = file.OpenReadStream(MaxUploadBytes);
+            await readStream.CopyToAsync(buffer);
+            buffer.Position = 0;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"The file could not be read: {ex.Message}";
+            ClearSelection();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task UploadAsync()
+    {
+        if (buffer is null || selectedFileName is null)
+        {
+            errorMessage = "Select a file to upload.";
+            return;
+        }
+
+        isUploading = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            buffer.Position = 0;
+
+            var request = new DocumentUploadRequest
+            {
+                Title = title,
+                Description = description,
+                Category = category,
+                Tags = tags,
+                OriginalFileName = selectedFileName,
+                ContentType = selectedContentType ?? "application/octet-stream",
+                FileSizeBytes = selectedFileSize,
+                Content = buffer
+            };
+
+            var result = await DocumentService.UploadDocumentAsync(request, CurrentUserId);
+
+            if (result.Succeeded)
+            {
+                successMessage = $"'{result.Document!.Title}' was uploaded.";
+                ResetForm();
+                await OnUploaded.InvokeAsync();
+            }
+            else
+            {
+                errorMessage = result.ErrorMessage;
+            }
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        title = null;
+        description = null;
+        tags = null;
+        category = DocumentCategory.Other;
+        ClearSelection();
+        inputFileKey = Guid.NewGuid();
+    }
+
+    private void ClearSelection()
+    {
+        buffer?.Dispose();
+        buffer = null;
+        selectedFileName = null;
+        selectedContentType = null;
+        selectedFileSize = 0;
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.#} KB";
+        return $"{bytes / 1024d / 1024d:0.#} MB";
+    }
+}

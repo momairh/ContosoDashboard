@@ -74,6 +74,7 @@ ContosoDashboard is built using ASP.NET Core 8.0 with Blazor Server and provides
 - **Team Directory**: Browse team members by department with status, roles, and contact information
 - **Notifications Center**: View and manage all notifications with read/unread status and priority badges
 - **User Profile**: Update personal information, availability status, and notification preferences
+- **Document Management (MVP)**: Upload files, view your documents with category filtering and date/title sorting. See [Documents](#documents) below.
 - **Service-Level Security**: Authorization checks prevent IDOR vulnerabilities
 - **Data Models**: Complete entity framework models for Users, Tasks, Projects, Notifications, and Announcements
 - **Business Services**: Service layer for all core functionality (Tasks, Projects, Users, Notifications, Dashboard)
@@ -81,7 +82,7 @@ ContosoDashboard is built using ASP.NET Core 8.0 with Blazor Server and provides
 
 ### 🔧 Technical Stack
 
-- **Framework**: ASP.NET Core 8.0
+- **Framework**: ASP.NET Core 10.0
 - **UI**: Blazor Server
 - **Database**: SQLite with Entity Framework Core
 - **Authentication**: Cookie-based mock authentication for training (Azure AD/Microsoft Entra ID ready)
@@ -294,6 +295,7 @@ The application includes pre-seeded data for testing:
 | Dashboard | `/` | Summary, announcements, quick actions | Yes |
 | Tasks | `/tasks` | View and manage your tasks | Yes |
 | Projects | `/projects` | View your projects | Yes |
+| Documents | `/documents` | Upload and browse documents | Yes |
 | Project Details | `/projects/{id}` | Detailed project view | Yes (member only) |
 | Team | `/team` | View team members | Yes |
 | Notifications | `/notifications` | Manage notifications | Yes |
@@ -330,7 +332,46 @@ The application includes pre-seeded data for testing:
 - Notification preferences
 - Display initials when no photo is set
 
+<a id="documents"></a>
+### Documents
+
+Upload a file and see it listed immediately. Documents are visible to you if you uploaded them,
+if they belong to a project you are on, if they were shared with you or your department, or if
+you are an administrator.
+
+- **Storage**: files are written to `ContosoDashboard/AppData/uploads/{userId}/{projectId|personal}/`,
+  outside `wwwroot`, so they can never be served as static files. The database stores a relative
+  path only.
+- **Stored names**: each file is saved under a fresh GUID name, so an uploaded name can never
+  overwrite an existing file or influence the path on disk.
+- **Accepted types**: Office, PDF, text, CSV, and images, up to 25 MB. Both limits are set in
+  `appsettings.json` under `DocumentStorage` and enforced on the server, not just in the browser.
+- **Content check**: PDF, PNG, and JPEG uploads are verified against their expected leading
+  bytes, so an executable renamed to `.pdf` is rejected.
+- **Audit**: every upload writes a `DocumentActivity` row. These rows keep a copy of the title
+  and deliberately have no foreign key to `Documents`, so history survives deletion.
+
 ## Troubleshooting
+
+### Page Is Stuck on "Loading..." and No Buttons Respond
+
+This almost always means the **Blazor Server connection dropped**, not that a page is broken.
+
+Blazor Server keeps the UI in the browser but the component state on the server, connected by a
+SignalR WebSocket. If the server stops, the browser keeps showing the last render while nothing
+is wired to it — so buttons, filters, spinners, and even Logout all go dead at once. A page that
+is still showing a loading spinner will show it forever, because the code that replaces it runs
+on the server.
+
+- The app shows a "Connection lost. Reconnecting..." overlay when this happens. If you see it,
+  the server went away.
+- If the server was restarted, the browser cannot resume the old session and will offer a
+  **Reload** link. Reloading restores the page; your login cookie survives.
+- Confirm the server is actually running: `Get-NetTCPConnection -LocalPort 5000 -State Listen`.
+  If nothing is returned, start it with `dotnet run`.
+
+**Symptom that all controls die simultaneously is the tell.** A genuine bug in one page normally
+breaks that page only, and usually raises an error rather than freezing everything.
 
 ### Can't Login
 
@@ -389,6 +430,13 @@ This is a **training application**, not production code. Known limitations inclu
 - **CSP includes unsafe directives**: `'unsafe-inline'` and `'unsafe-eval'` required for Blazor Server but not ideal for security
 - **No email verification**: User emails are not validated
 - **No account lockout**: Failed login attempts don't trigger account locks
+- **No real virus scanning**: `PermissiveFileScanner` accepts every file it is given. It exists so
+  the scanning step is a real seam in the upload flow, not so uploads are actually safe. The app
+  must run fully offline, so no scanning engine or cloud service is used. Extension, size, and
+  magic-number checks are the only real defences. See `specs/001-document-management/research.md`
+  (R-002, R-014) for the production architecture this stands in for.
+- **No document deletion, sharing, search, preview, or download UI yet**: the MVP covers upload
+  and listing only. Those remain as tasks T046-T108.
 
 These limitations are **intentional** for training purposes to keep the application simple and self-contained. Production applications must address all of these security concerns.
 
